@@ -16,6 +16,7 @@ const ARENAS = [
 ];
 import { AnimationLab } from './animLab.js';
 import { enterOverlay, exitOverlay, staggerIn, attachHover, selectPop, popPortrait } from './ui/selectFx.js';
+import { TouchControls } from './ui/touchControls.js';
 
 const NEUTRAL_INPUT = { isDown: () => false, wasPressed: () => false, endFrame: () => {} };
 const WINS_TO_TAKE_SET = 2;
@@ -43,8 +44,12 @@ export class FightingGame {
     this.remoteInput = new RemoteInput();
     this.audio = new AudioSystem();
     const params = new URLSearchParams(location.search);
-    this.lite = params.has('lite');
+    this.isTouch = TouchControls.isTouch();
+    this.isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (this.isTouch && Math.min(window.innerWidth, window.innerHeight) <= 820);
+    this.lite = params.has('lite') || this.isMobile; // lighter renderer on phones
     this.hq = params.has('hq'); // opt-in reflective floor (heavier)
+    if (this.isTouch) document.body.classList.add('touch');
+    if (this.isMobile) document.body.classList.add('mobile');
     this.tuning = getTuning();
 
     this.scene = new THREE.Scene();
@@ -80,10 +85,11 @@ export class FightingGame {
     // Music: try to start immediately, and guarantee it on the first user interaction
     // (browsers block audio until a gesture). start() is idempotent and resumes rather
     // than restarts, so the track plays continuously across menu → mode/char/arena → fights.
+    if (this.isTouch) this.touch = new TouchControls();
     this.audio.start();
-    const kickAudio = () => this.audio.start();
-    window.addEventListener('pointerdown', kickAudio);
-    window.addEventListener('keydown', kickAudio);
+    const firstGesture = () => { this.audio.start(); if (this.isMobile) this.goFullscreen(); };
+    window.addEventListener('pointerdown', firstGesture);
+    window.addEventListener('keydown', firstGesture);
     this.setBanner('LOADING FIGHTERS…');
     try {
       await this.loadFighters();
@@ -208,6 +214,7 @@ export class FightingGame {
 
   showMenu(show) {
     this.hideOverlays();
+    if (show) this.touch?.hide();
     const m = document.getElementById('menu');
     if (m) m.style.display = show ? 'grid' : 'none';
     const help = document.getElementById('help');
@@ -218,6 +225,16 @@ export class FightingGame {
     document.getElementById('charSelect')?.classList.remove('show');
     document.getElementById('arenaSelect')?.classList.remove('show');
     const np = document.getElementById('netPanel'); if (np) np.style.display = 'none';
+  }
+
+  // Go landscape fullscreen on mobile (needs a user gesture; iOS Safari may reject).
+  goFullscreen() {
+    if (this._fsTried) return; this._fsTried = true;
+    const el = document.documentElement;
+    try {
+      const req = el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
+      Promise.resolve(req).then(() => { try { screen.orientation?.lock?.('landscape'); } catch (_) {} }).catch(() => {});
+    } catch (_) {}
   }
 
   // ---------------- character / arena select ----------------
@@ -480,6 +497,7 @@ export class FightingGame {
 
   // ---------------- rounds ----------------
   startRound(first = false) {
+    this.touch?.show();
     this.roundOver = false;
     this.placeFightersAtStart();
     this.p1.health = this.p2.health = 100;

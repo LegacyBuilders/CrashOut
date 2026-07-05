@@ -208,3 +208,54 @@ canvas { display: block; }
   background: rgba(0,0,0,.45); padding: 3px 8px; border-radius: 6px;
   pointer-events: none;
 }
+
+/* ---------------- Mobile touch controls ---------------- */
+#touchControls { position: fixed; inset: 0; z-index: 35; pointer-events: none; display: none; touch-action: none; }
+#touchControls.show { display: block; }
+.tc-joyzone { position: absolute; left: 0; bottom: 0; width: 46%; height: 84%; pointer-events: auto; }
+.tc-joy { position: fixed; width: 132px; height: 132px; margin: -66px 0 0 -66px; pointer-events: none; opacity: 0; transition: opacity .12s; }
+.tc-joy.show { opacity: .55; }
+.tc-ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(255,255,255,.55); background: radial-gradient(circle, rgba(0,0,0,.28), rgba(0,0,0,.12)); }
+.tc-knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff, #b9c2e0); box-shadow: 0 0 16px rgba(255,255,255,.5); }
+.tc-atks { position: absolute; right: 3%; bottom: 6%; width: 190px; height: 190px; pointer-events: none; }
+.tc-btn { position: absolute; width: 76px; height: 76px; border-radius: 50%; pointer-events: auto; cursor: pointer;
+  border: 2px solid rgba(255,255,255,.5); color: #fff; font: 900 11px "Arial Black"; letter-spacing: .5px;
+  opacity: .34; transition: opacity .08s, transform .08s; -webkit-tap-highlight-color: transparent; user-select: none; }
+.tc-btn.pressed { opacity: .72; transform: scale(.9); }
+.tc-punch { right: 4px;  bottom: 2px;   background: radial-gradient(circle at 40% 35%, rgba(255,90,140,.9), rgba(255,47,107,.5)); }
+.tc-kick  { right: 96px; bottom: 30px;  background: radial-gradient(circle at 40% 35%, rgba(90,220,255,.9), rgba(55,224,255,.45)); }
+.tc-heavy { right: 48px; bottom: 108px; background: radial-gradient(circle at 40% 35%, rgba(170,120,255,.9), rgba(122,75,255,.5)); }
+
+/* Rotate-device prompt (portrait on touch devices) */
+#rotate { display: none; position: fixed; inset: 0; z-index: 200; background: #05060c;
+  align-items: center; justify-content: center; text-align: center; color: #fff; }
+.rotInner { font: 900 20px "Arial Black"; letter-spacing: 2px; }
+.rotIcon { font-size: 60px; margin-bottom: 14px; animation: rotwiggle 1.6s ease-in-out infinite; }
+.rotInner small { display: block; margin-top: 8px; font: 500 13px Arial; color: #9aa4c9; letter-spacing: 1px; }
+@keyframes rotwiggle { 0%,100% { transform: rotate(0); } 50% { transform: rotate(90deg); } }
+@media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+
+/* Hide dev HUD clutter on touch devices */
+body.mobile #help, body.mobile #fps { display: none !important; }
+
+/* Short-screen (mobile landscape) tightening for menus/select */
+@media (max-height: 520px) {
+  .logo { font-size: clamp(40px, 10vh, 78px); }
+  .topline { font-size: clamp(13px, 3.4vh, 22px); }
+  .subtitle { font-size: 14px; letter-spacing: 4px; }
+  .vs { margin: 8px 0 14px; }
+  .mode { padding: 11px; font-size: 17px; }
+  .selInner { padding: 8px 12px; }
+  .selTitle { font-size: clamp(20px, 5vh, 34px); margin-bottom: 8px; }
+  .vsHeader { gap: clamp(6px, 2vw, 26px); margin-bottom: 10px; }
+  .vsFrame { width: clamp(96px, 15vw, 140px); padding: 6px; }
+  .vsPortrait { height: clamp(72px, 11vh, 104px); padding-top: 10px; }
+  .vsBadge { font-size: clamp(22px, 6vh, 42px); }
+  .card.fighter { width: clamp(96px, 13vw, 130px); }
+  .card.fighter .portrait { height: clamp(96px, 15vh, 128px); }
+  .card.arena { width: clamp(170px, 24vw, 250px); }
+  .card.arena .thumb { height: clamp(90px, 15vh, 130px); }
+  .selBtns { margin-top: 10px; }
+  .selBtns button { padding: 9px 20px; font-size: 14px; }
+}
