@@ -1,0 +1,10 @@
+# Text files: normalize to LF. Binary assets: no LFS, no diff/merge.
+* text=auto eol=lf
+*.glb binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.mp3 binary
+*.wav binary
+*.fbx binary

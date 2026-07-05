@@ -1,0 +1,1 @@
+{"scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","preview":"vite preview --host 0.0.0.0"},"dependencies":{"@vitejs/plugin-basic-ssl":"latest","motion":"^12.42.2","peerjs":"^1.5.5","three":"latest","three-stdlib":"^2.36.1","vite":"latest"},"devDependencies":{"playwright":"^1.61.1"}}

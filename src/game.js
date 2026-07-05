@@ -1,0 +1,629 @@
+import * as THREE from 'three';
+import { AssetLoader } from './assetLoader.js';
+import { Fighter } from './fighter.js';
+import { KeyboardInput, P1_BINDINGS, P2_BINDINGS, P2_LOCAL_BINDINGS, ACTION_BINDINGS, sampleActions } from './input.js';
+import { AIInput } from './aiInput.js';
+import { VFXSystem } from './vfx.js';
+import { buildCityArena, addNightLights } from './arena.js';
+import { AudioSystem } from './audio.js';
+import { NetSession, RemoteInput } from './net.js';
+import { CHARACTERS, ROSTER, LOCKED_SLOTS, getClipMap, getTuning, saveTuning } from './characterConfig.js';
+
+const ARENAS = [
+  { id: 'city', name: 'CITY BLOCK', locked: false, img: '/assets/arenas/city.png' },
+  { id: 'rooftop', name: 'ROOFTOP', locked: true },
+  { id: 'dojo', name: 'DOJO', locked: true },
+];
+import { AnimationLab } from './animLab.js';
+import { enterOverlay, exitOverlay, staggerIn, attachHover, selectPop, popPortrait } from './ui/selectFx.js';
+
+const NEUTRAL_INPUT = { isDown: () => false, wasPressed: () => false, endFrame: () => {} };
+const WINS_TO_TAKE_SET = 2;
+
+export class FightingGame {
+  constructor(container = document.body) {
+    this.container = container;
+    this.clock = new THREE.Clock();
+    this.input = new KeyboardInput();
+    this.loader = new AssetLoader();
+    this.vfxReady = false;
+
+    this.mode = 'menu';            // menu | cpu | local | host | guest
+    this.arena = { halfWidth: 7.5 };
+    this.roundOver = false;
+    this.matchOver = false;
+    this.fightStarted = false;
+    this.fightersReady = false;
+    this.roundEndTimer = 0;
+    this.round = 1;
+    this.wins = [0, 0];
+    this.difficulty = 'normal';
+
+    this.net = null;
+    this.remoteInput = new RemoteInput();
+    this.audio = new AudioSystem();
+    const params = new URLSearchParams(location.search);
+    this.lite = params.has('lite');
+    this.hq = params.has('hq'); // opt-in reflective floor (heavier)
+    this.tuning = getTuning();
+
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.05, 2000);
+    this.camDefault = { pos: new THREE.Vector3(0, 3.5, 11.5), look: new THREE.Vector3(0, 1.5, -0.4) };
+    this.camera.position.copy(this.camDefault.pos);
+    this.camera.lookAt(this.camDefault.look);
+    this.camLook = this.camDefault.look.clone();
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(this.lite ? 1 : Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.shadowMap.enabled = !this.lite;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.18;
+    this.container.appendChild(this.renderer.domElement);
+
+    this.vfx = new VFXSystem(this.scene, this.camera);
+
+    window.addEventListener('resize', () => this.onResize());
+    this.setupMenuUi();
+  }
+
+  async init() {
+    addNightLights(this.scene, this.lite);
+    // Reflective floor only when explicitly requested (?hq) and not in lite mode.
+    this.cityArena = buildCityArena(this.scene, this.renderer, { lite: this.lite || !this.hq });
+    this.arena = this.cityArena.bounds;
+    this.animate();
+
+    // Music: try to start immediately, and guarantee it on the first user interaction
+    // (browsers block audio until a gesture). start() is idempotent and resumes rather
+    // than restarts, so the track plays continuously across menu → mode/char/arena → fights.
+    this.audio.start();
+    const kickAudio = () => this.audio.start();
+    window.addEventListener('pointerdown', kickAudio);
+    window.addEventListener('keydown', kickAudio);
+    this.setBanner('LOADING FIGHTERS…');
+    try {
+      await this.loadFighters();
+      this.fightersReady = true;
+      this.lab = new AnimationLab(this);
+      this.showMenu(true);
+      this.setBanner('');
+      console.log('CRASH OUT ready. Pick a mode. Press ` for the Animation Lab.');
+    } catch (err) {
+      console.error('Asset load failed:', err);
+      this.setBanner(`Load failed: ${err.message || err}`);
+    }
+  }
+
+  // ---------------- fighters ----------------
+  // Load the shared clip pool + extra clips once, then build the default menu matchup.
+  async loadFighters() {
+    const [walkClips, idleClips] = await Promise.all([
+      this.loader.loadClips('/assets/animations/walk.glb'),
+      this.loader.loadClips('/assets/animations/idle_rap.glb'),
+    ]);
+    this.extraClips = { walk: walkClips[0], idleRap: idleClips[0] };
+    // The canonical animation library = Reeves Junya's + Moloch's embedded clips.
+    // Loading them here also warms the AssetLoader cache for buildMatch().
+    const jCC = await this.loader.loadCharacterWithClips(CHARACTERS.junya.modelUrl);
+    const mCC = await this.loader.loadCharacterWithClips(CHARACTERS.moloch.modelUrl);
+    this.clipPool = { junya: jCC.clips, moloch: mCC.clips };
+    this.selectedP1 = 'junya';
+    this.selectedP2 = 'moloch';
+    await this.buildMatch('junya', 'moloch'); // menu-background matchup
+  }
+
+  // Build (or rebuild) a fighter for a character id. Loads the mesh (cached), assigns
+  // actions from the shared pool, applies the walk + rap-idle clips.
+  async makeFighter(charId, side, startX, who) {
+    const cfg = { ...CHARACTERS[charId], clips: getClipMap(charId) };
+    const f = new Fighter({
+      id: `${side}-${charId}`, startX, character: cfg,
+      bindings: side === 'P1' ? P1_BINDINGS : P2_BINDINGS,
+      assetLoader: this.loader, vfx: this.vfx,
+      onEvent: (t, p) => this.onFighterEvent(who, t, p),
+    });
+    await f.load();
+    f.setTuning(this.tuning);
+    f.finalizeClips(this.clipPool);
+    if (this.extraClips?.walk) { f.setClip('walkForward', this.extraClips.walk); f.setClip('walkBack', this.extraClips.walk); }
+    if (cfg.idleRap && this.extraClips?.idleRap) f.setClip('idle', this.extraClips.idleRap);
+    f.play('idle', 0.05, true, true);
+    return f;
+  }
+
+  // Swap in a fresh matchup. Gates the loop while (re)building.
+  async buildMatch(p1Id, p2Id) {
+    this.fightersReady = false;
+    this.fightStarted = false;
+    if (this.p1) this.scene.remove(this.p1.group);
+    if (this.p2) this.scene.remove(this.p2.group);
+    this.p1 = await this.makeFighter(p1Id, 'P1', -2.6, 1);
+    this.p2 = await this.makeFighter(p2Id, 'P2', 2.6, 2);
+    this.scene.add(this.p1.group, this.p2.group);
+    this.placeFightersAtStart();
+    this.p1.faceOpponent(this.p2);
+    this.p2.faceOpponent(this.p1);
+    this.p1char = p1Id; this.p2char = p2Id;
+    this.fightersReady = true;
+  }
+
+  // Push live tuning (from the Animation Lab) into both fighters.
+  applyTuning(t) {
+    this.tuning = { ...this.tuning, ...t };
+    saveTuning(this.tuning);
+    this.p1?.setTuning(this.tuning); this.p2?.setTuning(this.tuning);
+    this.p1?.faceOpponent(this.p2); this.p2?.faceOpponent(this.p1);
+  }
+
+  placeFightersAtStart() {
+    this.p1.group.position.set(-2.6, 0, 0);
+    this.p2.group.position.set(2.6, 0, 0);
+    this.p1.velocity.set(0, 0, 0);
+    this.p2.velocity.set(0, 0, 0);
+  }
+
+  onFighterEvent(who, type, payload) {
+    this.audio.event(type, payload);
+    if (type === 'hit' || type === 'ko') this.shake = 0.18;
+    // Host relays nothing extra; guest derives SFX from snapshots instead.
+  }
+
+  // ---------------- menu / modes ----------------
+  setupMenuUi() {
+    const on = (id, ev, fn) => document.getElementById(id)?.addEventListener(ev, fn);
+    on('btnCpu', 'click', () => this.showCharSelect('cpu'));
+    on('btnLocal', 'click', () => this.showCharSelect('local'));
+    on('btnHost', 'click', () => this.showCharSelect('host'));
+    on('btnJoin', 'click', () => {
+      const id = document.getElementById('joinId')?.value?.trim();
+      if (id) this.showCharSelect('guest', id);
+    });
+    on('charBack', 'click', () => this.showMenu(true));
+    on('charNext', 'click', () => this.onCharNext());
+    on('arenaBack', 'click', () => this.showCharSelect(this.pendingMode, this.pendingJoinId));
+    on('arenaFight', 'click', () => this.onArenaConfirm());
+    on('difficulty', 'change', (e) => { this.difficulty = e.target.value; });
+    on('replayBtn', 'click', () => this.rematch());
+    on('muteBtn', 'click', () => {
+      const m = this.audio.toggleMute();
+      const b = document.getElementById('muteBtn'); if (b) b.textContent = m ? '🔇' : '🔊';
+    });
+    on('menuBtn', 'click', () => this.backToMenu());
+    on('copyInvite', 'click', () => {
+      const link = document.getElementById('inviteLink');
+      if (link) { navigator.clipboard?.writeText(link.value); }
+    });
+
+    // Auto-join if opened with ?join=<id>
+    const params = new URLSearchParams(location.search);
+    const join = params.get('join');
+    if (join) {
+      const jf = document.getElementById('joinId'); if (jf) jf.value = join;
+    }
+  }
+
+  showMenu(show) {
+    this.hideOverlays();
+    const m = document.getElementById('menu');
+    if (m) m.style.display = show ? 'grid' : 'none';
+    const help = document.getElementById('help');
+    if (help) help.style.display = show ? 'none' : 'block';
+  }
+
+  hideOverlays() {
+    document.getElementById('charSelect')?.classList.remove('show');
+    document.getElementById('arenaSelect')?.classList.remove('show');
+    const np = document.getElementById('netPanel'); if (np) np.style.display = 'none';
+  }
+
+  // ---------------- character / arena select ----------------
+  hex(c) { return '#' + c.toString(16).padStart(6, '0'); }
+
+  showCharSelect(mode, joinId = null) {
+    this.pendingMode = mode; this.pendingJoinId = joinId;
+    this.hideOverlays();
+    const m = document.getElementById('menu'); if (m) m.style.display = 'none';
+    const overlay = document.getElementById('charSelect');
+    overlay?.classList.add('show');
+    const twoPlayer = (mode === 'cpu' || mode === 'local');
+    const vsP2 = document.getElementById('vsP2'); if (vsP2) vsP2.style.display = twoPlayer ? '' : 'none';
+    const vsBadge = document.getElementById('vsBadge'); if (vsBadge) vsBadge.style.display = twoPlayer ? '' : 'none';
+    const p1tag = document.getElementById('vsP1Tag'); if (p1tag) p1tag.textContent = twoPlayer ? (mode === 'local' ? 'PLAYER 1' : 'YOUR FIGHTER') : 'YOUR FIGHTER';
+    const next = document.getElementById('charNext'); if (next) next.textContent = (mode === 'guest') ? 'CONNECT ▶' : 'NEXT: ARENA ▶';
+    this.activeSlot = 'p1';
+    ['p1', 'p2'].forEach((slot) => { const f = document.getElementById(slot === 'p1' ? 'vsP1' : 'vsP2'); if (f) f.onclick = () => { this.activeSlot = slot; this.updateVsFrames(); this.audio.uiBlip?.(); }; });
+    this.renderRoster();
+    this.updateVsFrames();
+    enterOverlay(overlay);
+    staggerIn(overlay?.querySelectorAll('#roster .card'));
+  }
+
+  renderRoster() {
+    const el = document.getElementById('roster'); if (!el) return;
+    let html = ROSTER.map((id) => {
+      const c = CHARACTERS[id];
+      const sel = (id === this.selectedP1 || id === this.selectedP2);
+      return `<div class="card fighter${sel ? ' selected' : ''}" data-id="${id}" style="--accent:${this.hex(c.color)}">
+        <div class="portrait"><img src="${c.avatar}" alt="${c.name}" loading="lazy"/></div>
+        <div class="cname">${c.name}</div></div>`;
+    }).join('');
+    for (let i = 0; i < LOCKED_SLOTS; i++) html += `<div class="card fighter locked"><div class="portrait"><span class="qmark">?</span></div><div class="cname">COMING SOON</div></div>`;
+    el.innerHTML = html;
+    el.querySelectorAll('.card[data-id]').forEach((card) => {
+      attachHover(card);
+      card.onclick = () => this.pickFighter(card.dataset.id, card);
+    });
+  }
+
+  pickFighter(id, card) {
+    const twoPlayer = (this.pendingMode === 'cpu' || this.pendingMode === 'local');
+    if (this.activeSlot === 'p1' || !twoPlayer) this.selectedP1 = id; else this.selectedP2 = id;
+    this.audio.uiSelect?.();
+    selectPop(card);
+    if (twoPlayer && this.activeSlot === 'p1') this.activeSlot = 'p2';
+    document.querySelectorAll('#roster .card[data-id]').forEach((c) => c.classList.toggle('selected', c.dataset.id === this.selectedP1 || (twoPlayer && c.dataset.id === this.selectedP2)));
+    this.updateVsFrames();
+  }
+
+  updateVsFrames() {
+    const twoPlayer = (this.pendingMode === 'cpu' || this.pendingMode === 'local');
+    const set = (slot, id) => {
+      const c = CHARACTERS[id]; if (!c) return;
+      const frame = document.getElementById(slot === 'p1' ? 'vsP1' : 'vsP2');
+      const img = document.getElementById(slot === 'p1' ? 'vsP1Img' : 'vsP2Img');
+      const name = document.getElementById(slot === 'p1' ? 'vsP1Name' : 'vsP2Name');
+      if (img && img.getAttribute('src') !== c.avatar) { img.src = c.avatar; popPortrait(frame?.querySelector('.vsPortrait')); }
+      if (name) name.textContent = c.name;
+      if (frame) frame.style.setProperty('--accent', this.hex(c.color));
+    };
+    set('p1', this.selectedP1);
+    if (twoPlayer) set('p2', this.selectedP2);
+    document.getElementById('vsP1')?.classList.toggle('active', this.activeSlot === 'p1' || !twoPlayer);
+    document.getElementById('vsP2')?.classList.toggle('active', twoPlayer && this.activeSlot === 'p2');
+  }
+
+  onCharNext() {
+    this.audio.uiSelect?.();
+    if (this.pendingMode === 'guest') { this.startGuest(this.pendingJoinId); return; }
+    this.showArenaSelect();
+  }
+
+  showArenaSelect() {
+    this.hideOverlays();
+    const overlay = document.getElementById('arenaSelect');
+    overlay?.classList.add('show');
+    this.renderArenas();
+    enterOverlay(overlay);
+    staggerIn(overlay?.querySelectorAll('#arenaGrid .card'));
+  }
+
+  renderArenas() {
+    const el = document.getElementById('arenaGrid'); if (!el) return;
+    this.selectedArena = this.selectedArena || 'city';
+    el.innerHTML = ARENAS.map((a) => {
+      if (a.locked) return `<div class="card arena locked"><div class="thumb"><span class="qmark">?</span></div><div class="cname">${a.name}</div><div class="ctag">COMING SOON</div></div>`;
+      const bg = a.img ? ` style="background-image:url('${a.img}')"` : '';
+      return `<div class="card arena${a.id === this.selectedArena ? ' selected' : ''}" data-arena="${a.id}"><div class="thumb"${bg}></div><div class="cname">${a.name}</div></div>`;
+    }).join('');
+    el.querySelectorAll('.card[data-arena]').forEach((card) => {
+      attachHover(card);
+      card.onclick = () => {
+        this.selectedArena = card.dataset.arena; this.audio.uiSelect?.(); selectPop(card);
+        el.querySelectorAll('.card[data-arena]').forEach((c) => c.classList.toggle('selected', c.dataset.arena === this.selectedArena));
+      };
+    });
+  }
+
+  onArenaConfirm() {
+    if (this.pendingMode === 'host') { this.startHost(); return; }
+    this.confirmMatch();
+  }
+
+  async confirmMatch() {
+    const mode = this.pendingMode;
+    this.mode = mode;
+    this.audio.start();
+    this.hideOverlays();
+    const help = document.getElementById('help'); if (help) help.style.display = 'block';
+    this.setBanner('LOADING FIGHTERS…');
+    await this.buildMatch(this.selectedP1, this.selectedP2);
+    this.setBanner('');
+    this.wins = [0, 0]; this.round = 1; this.matchOver = false;
+    const n1 = CHARACTERS[this.selectedP1].name, n2 = CHARACTERS[this.selectedP2].name;
+    if (mode === 'cpu') {
+      this.aiInput = new AIInput(P2_BINDINGS, this.difficulty);
+      this.p2.bindings = P2_BINDINGS; this.p2.isAI = true;
+      this.setNames(n1, n2 + ' (CPU)');
+    } else {
+      this.p2.bindings = P2_LOCAL_BINDINGS; this.p2.isAI = false;
+      this.setNames(n1 + ' · P1', n2 + ' · P2');
+    }
+    this.startRound(true);
+  }
+
+  setBanner(text, cls = '') {
+    const b = document.getElementById('banner');
+    if (!b) return;
+    b.textContent = text;
+    b.className = cls;
+    b.style.display = text ? 'flex' : 'none';
+  }
+
+  // Host: picked own fighter + arena, now open the room and wait for the guest's pick.
+  async startHost() {
+    this.mode = 'host';
+    this.audio.start();
+    this.hideOverlays();
+    this.hostChar = this.selectedP1;
+    this.net = new NetSession();
+    this.net.onData = (msg) => this.onHostData(msg);
+    this.net.onOpen = () => this.setBanner('OPPONENT CONNECTED — PICKING…', 'good');
+    this.net.onClose = () => this.setBanner('OPPONENT LEFT', 'bad');
+    try {
+      const id = await this.net.host();
+      const link = `${location.origin}${location.pathname}?join=${id}`;
+      this.showInvite(id, link);
+    } catch (e) {
+      this.setBanner('Could not open room. Check connection.', 'bad');
+    }
+  }
+
+  onHostData(msg) {
+    if (!msg) return;
+    if (msg.t === 'in') this.remoteInput.apply(msg);
+    else if (msg.t === 'sel' && !this._matchStarting) { this._matchStarting = true; this.guestChar = msg.char; this.beginNetMatch(); }
+  }
+
+  // Guest: picked own fighter, now connect and send the pick to the host.
+  async startGuest(hostId) {
+    this.mode = 'guest';
+    this.audio.start();
+    this.hideOverlays();
+    this.guestChar = this.selectedP1;
+    this.net = new NetSession();
+    this.net.onData = (msg) => this.onGuestData(msg);
+    this.net.onClose = () => this.setBanner('DISCONNECTED', 'bad');
+    this.setBanner('CONNECTING…');
+    try {
+      await this.net.join(hostId);
+      this.setBanner('CONNECTED — WAITING FOR HOST', 'good');
+      this.net.send({ t: 'sel', char: this.guestChar });
+    } catch (e) {
+      this.setBanner('Could not join room.', 'bad');
+    }
+  }
+
+  showInvite(id, link) {
+    this.hideOverlays();
+    const menu = document.getElementById('menu'); if (menu) menu.style.display = 'none';
+    const panel = document.getElementById('netPanel');
+    if (panel) panel.style.display = 'block';
+    const code = document.getElementById('roomCode'); if (code) code.textContent = id;
+    const l = document.getElementById('inviteLink'); if (l) l.value = link;
+    this.setBanner('WAITING FOR OPPONENT…');
+  }
+
+  async beginNetMatch() {
+    const panel = document.getElementById('netPanel'); if (panel) panel.style.display = 'none';
+    const help = document.getElementById('help'); if (help) help.style.display = 'block';
+    this.setBanner('LOADING FIGHTERS…');
+    await this.buildMatch(this.hostChar, this.guestChar);
+    this.setBanner('');
+    this.wins = [0, 0]; this.round = 1; this.matchOver = false;
+    this.p2.bindings = ACTION_BINDINGS; this.p2.isAI = false;
+    this.setNames(CHARACTERS[this.hostChar].name + ' (HOST)', CHARACTERS[this.guestChar].name + ' (P2)');
+    this.net.send({ t: 'setup', arena: this.selectedArena, p1char: this.hostChar, p2char: this.guestChar });
+    this.startRound(true);
+  }
+
+  async onGuestData(msg) {
+    if (!msg) return;
+    if (msg.t === 'setup') {
+      if (this._matchStarting) return; this._matchStarting = true;
+      this.setBanner('LOADING FIGHTERS…');
+      await this.buildMatch(msg.p1char, msg.p2char); // host is P1, guest is P2
+      this.setBanner('');
+      const help = document.getElementById('help'); if (help) help.style.display = 'block';
+      this.setNames(CHARACTERS[msg.p1char].name, CHARACTERS[msg.p2char].name + ' (YOU)');
+    } else if (msg.t === 'st') {
+      if (!this._guestStarted) { this._guestStarted = true; this.fightStarted = true; }
+      this._latest = msg;
+    }
+  }
+
+  setNames(a, b) {
+    const p1 = document.getElementById('p1name'); if (p1) p1.textContent = a;
+    const p2 = document.getElementById('p2name'); if (p2) p2.textContent = b;
+  }
+
+  backToMenu() {
+    this.net?.close(); this.net = null;
+    this._matchStarting = false; this._guestStarted = false; this._latest = null;
+    this.fightStarted = false; this.mode = 'menu';
+    this.roundOver = this.matchOver = false;
+    this.placeFightersAtStart();
+    this.p1.health = this.p2.health = 100;
+    this.p1.setState('idle'); this.p2.setState('idle');
+    this.p1.play('idle', 0.1, true, true); this.p2.play('idle', 0.1, true, true);
+    document.getElementById('replayBtn')?.setAttribute('style', 'display:none');
+    document.getElementById('netPanel')?.setAttribute('style', 'display:none');
+    this.setBanner('');
+    this.showMenu(true);
+  }
+
+  // ---------------- rounds ----------------
+  startRound(first = false) {
+    this.roundOver = false;
+    this.placeFightersAtStart();
+    this.p1.health = this.p2.health = 100;
+    this.p1.koStarted = this.p2.koStarted = false;
+    this.p1.stun = this.p2.stun = 0;
+    this.p1.hitStop = this.p2.hitStop = 0;
+    this.p1.setState('idle'); this.p2.setState('idle');
+    this.p1.play('idle', 0.05, true, true); this.p2.play('idle', 0.05, true, true);
+    this.p1.faceOpponent(this.p2); this.p2.faceOpponent(this.p1);
+    this.updateHud();
+    document.getElementById('replayBtn')?.setAttribute('style', 'display:none');
+    if (this.aiInput) this.aiInput.setDifficulty(this.difficulty);
+    // round intro
+    this.fightStarted = false;
+    this.setBanner(`ROUND ${this.round}`, 'round');
+    setTimeout(() => {
+      this.setBanner('FIGHT!', 'fight');
+      this.audio.bell();
+      this.fightStarted = true;
+      setTimeout(() => this.setBanner(''), 700);
+    }, 900);
+  }
+
+  rematch() { this.wins = [0, 0]; this.round = 1; this.matchOver = false; this.startRound(true); }
+
+  checkRoundOver() {
+    if (this.roundOver) return;
+    if (this.p1.health > 0 && this.p2.health > 0) return;
+    this.roundOver = true;
+    const p1down = this.p1.health <= 0, p2down = this.p2.health <= 0;
+    let winner = 0;
+    if (p1down && p2down) winner = 0;
+    else if (p2down) { winner = 1; this.wins[0]++; }
+    else { winner = 2; this.wins[1]++; }
+    this.updatePips();
+    this.audio.event('ko');
+    if (this.wins[0] >= WINS_TO_TAKE_SET || this.wins[1] >= WINS_TO_TAKE_SET) {
+      this.matchOver = true;
+      const who = this.wins[0] >= WINS_TO_TAKE_SET ? this.nameP1() : this.nameP2();
+      this.setBanner(`${who} WINS!`, 'ko');
+      document.getElementById('replayBtn')?.setAttribute('style', 'display:block');
+    } else {
+      this.setBanner(winner === 0 ? 'DOUBLE KO' : `${winner === 1 ? this.nameP1() : this.nameP2()} — K.O.`, 'ko');
+      this.roundEndTimer = 2.2;
+    }
+  }
+
+  nameP1() { return document.getElementById('p1name')?.textContent || 'REEVES JUNYA'; }
+  nameP2() { return document.getElementById('p2name')?.textContent || 'MOLOCH'; }
+
+  // ---------------- loop ----------------
+  animate() {
+    requestAnimationFrame(() => this.animate());
+    // Clamp to 1/15 (not 1/30): below 30fps the old cap ran the sim in slow-motion.
+    const dt = Math.min(this.clock.getDelta(), 1 / 15);
+    this.cityArena?.update(dt);
+    this.update(dt);
+    this.vfx.update(dt);
+    this.updateCamera(dt);
+    this.renderer.render(this.scene, this.camera);
+    this.input.endFrame();
+    this.aiInput?.endFrame();
+    this.remoteInput.endFrame();
+    this.updateFps(dt);
+  }
+
+  updateFps(dt) {
+    this._fpsAcc = (this._fpsAcc || 0) + dt;
+    this._fpsN = (this._fpsN || 0) + 1;
+    if (this._fpsAcc >= 0.5) {
+      const fps = Math.round(this._fpsN / this._fpsAcc);
+      const el = document.getElementById('fps');
+      if (el) el.textContent = `${fps} FPS`;
+      this._fpsAcc = 0; this._fpsN = 0;
+    }
+  }
+
+  update(dt) {
+    if (!this.fightersReady) return;
+
+    // Animation Lab clip-preview: freeze game logic, just advance mixers so previews play.
+    // (Tuning sliders leave freeze off so gameplay keeps running.)
+    if (this.lab?.freeze) { this.p1.mixer?.update(dt); this.p2.mixer?.update(dt); return; }
+
+    if (this.mode === 'guest') return this.updateGuest(dt);
+
+    if (!this.fightStarted || this.mode === 'menu') {
+      this.p1.play('idle', 0.12); this.p2.play('idle', 0.12);
+      this.p1.mixer?.update(dt); this.p2.mixer?.update(dt);
+      this.p1.faceOpponent(this.p2); this.p2.faceOpponent(this.p1);
+      return;
+    }
+
+    this.p1.faceOpponent(this.p2);
+    this.p2.faceOpponent(this.p1);
+
+    if (!this.roundOver) {
+      const p2input = this.mode === 'cpu' ? this.aiInput : (this.mode === 'host' ? this.remoteInput : this.input);
+      if (this.mode === 'cpu') this.aiInput.update(dt, this.p2, this.p1);
+      this.p1.update(dt, this.input, this.p2, this.arena);
+      this.p2.update(dt, p2input, this.p1, this.arena);
+      this.checkRoundOver();
+    } else {
+      this.p1.update(dt, NEUTRAL_INPUT, this.p2, this.arena);
+      this.p2.update(dt, NEUTRAL_INPUT, this.p1, this.arena);
+      if (!this.matchOver && this.roundEndTimer > 0) {
+        this.roundEndTimer -= dt;
+        if (this.roundEndTimer <= 0) { this.round++; this.startRound(); }
+      }
+    }
+    this.updateHud();
+
+    // Host streams authoritative state to the guest.
+    if (this.mode === 'host' && this.net?.connected) {
+      this.net.send({ t: 'st', p1: this.p1.serialize(), p2: this.p2.serialize(), ro: this.roundOver, mo: this.matchOver, w: this.wins, rt: document.getElementById('banner')?.textContent || '' });
+    }
+  }
+
+  updateGuest(dt) {
+    // Send local input (guest controls P2).
+    if (this.net?.connected) this.net.send({ t: 'in', ...sampleActions(this.input, P1_BINDINGS) });
+    const s = this._latest;
+    if (s) {
+      const prevP2 = this.p2.health;
+      this.p1.applyNetState(s.p1, dt);
+      this.p2.applyNetState(s.p2, dt);
+      if (s.p2.h < prevP2) this.audio.event('hit');
+      this.wins = s.w || this.wins;
+      this.updatePips();
+      this.roundOver = s.ro; this.matchOver = s.mo;
+      if (s.rt) this.setBanner(s.rt, s.mo ? 'ko' : (s.ro ? 'ko' : ''));
+      else this.setBanner('');
+      this.updateHud();
+    } else {
+      this.p1.mixer?.update(dt); this.p2.mixer?.update(dt);
+    }
+  }
+
+  updateCamera(dt) {
+    // Tekken-style: gently frame the midpoint, pull back with distance.
+    if (!this.p1 || !this.p2) return;
+    const midX = (this.p1.group.position.x + this.p2.group.position.x) * 0.5;
+    const dist = Math.abs(this.p1.group.position.x - this.p2.group.position.x);
+    const targetX = THREE.MathUtils.clamp(midX * 0.45, -2.5, 2.5);
+    const targetZ = 10.5 + Math.min(dist * 0.35, 3.2);
+    let shakeX = 0, shakeY = 0;
+    if (this.shake > 0) { this.shake -= dt; shakeX = (Math.random() - 0.5) * this.shake; shakeY = (Math.random() - 0.5) * this.shake; }
+    const k = Math.min(1, dt * 4);
+    this.camera.position.x += (targetX + shakeX - this.camera.position.x) * k;
+    this.camera.position.y += (3.5 + shakeY - this.camera.position.y) * k;
+    this.camera.position.z += (targetZ - this.camera.position.z) * k;
+    this.camLook.x += (midX * 0.5 - this.camLook.x) * k;
+    this.camera.lookAt(this.camLook.x, 1.5, -0.4);
+  }
+
+  updateHud() {
+    const p1 = document.getElementById('p1Health'); if (p1) p1.style.width = `${Math.max(0, this.p1.health)}%`;
+    const p2 = document.getElementById('p2Health'); if (p2) p2.style.width = `${Math.max(0, this.p2.health)}%`;
+  }
+  updatePips() {
+    const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = '●'.repeat(n) + '○'.repeat(WINS_TO_TAKE_SET - n); };
+    set('p1pips', this.wins[0]); set('p2pips', this.wins[1]);
+  }
+
+  onResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+}

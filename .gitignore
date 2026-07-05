@@ -1,0 +1,23 @@
+# dependencies / build output
+node_modules/
+dist/
+*.local
+.vite/
+
+# Large SOURCE assets & backups — not needed to run/deploy the game.
+# The game loads the compressed GLBs in public/assets/ (kept in the repo).
+NEW ANIMATIONS/
+public/assets/**/*_orig.glb
+
+# Root-level original models & media (uncompressed sources)
+/junyaman.glb
+/goat-headed+businessperson+3d+model.glb
+/*.mp3
+/Screenshot_*.png
+
+# editor / os / tooling
+.DS_Store
+.vscode/
+.idea/
+.claude/
+*.log

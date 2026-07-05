@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CRASH OUT — by Alienz Only</title>
+  </head>
+  <body>
+    <!-- Title / mode menu -->
+    <div id="menu">
+      <div class="menuInner">
+        <div class="topline">REEVES&nbsp;JUNYA'S</div>
+        <div class="logo">CRASH<span>OUT</span></div>
+        <div class="subtitle">by Alienz Only</div>
+
+        <div class="modes">
+          <button id="btnCpu" class="mode primary">FIGHT THE CPU</button>
+          <div class="diffRow">
+            <label>Difficulty
+              <select id="difficulty">
+                <option value="easy">Easy</option>
+                <option value="normal" selected>Normal</option>
+                <option value="hard">Hard</option>
+              </select>
+            </label>
+          </div>
+          <button id="btnLocal" class="mode">LOCAL 2-PLAYER</button>
+          <button id="btnHost" class="mode">INVITE A FRIEND (ONLINE)</button>
+          <div class="joinRow">
+            <input id="joinId" type="text" placeholder="paste room code to join" />
+            <button id="btnJoin">JOIN</button>
+          </div>
+        </div>
+
+        <div class="controls">
+          <b>Reeves Junya:</b> ◀&nbsp;▶ move · ▲ jump · ▼ block · A/W punch · S/E kick · D hook<br/>
+          <b>P2 (local):</b> J/L move · I jump · K block · U punch · O kick · P heavy<br/>
+          <span class="dim">Press <b>`</b> (tilde) for the Animation Lab + Tuning panel.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Character select -->
+    <div id="charSelect" class="overlay">
+      <div class="selInner">
+        <div class="selTitle">SELECT YOUR FIGHTER</div>
+        <div class="vsHeader">
+          <div class="vsFrame p1" id="vsP1" data-slot="p1">
+            <div class="vsPortrait"><img id="vsP1Img" alt="" /></div>
+            <div class="vsName" id="vsP1Name">—</div>
+            <div class="vsTag" id="vsP1Tag">PLAYER 1</div>
+          </div>
+          <div class="vsBadge" id="vsBadge">VS</div>
+          <div class="vsFrame p2" id="vsP2" data-slot="p2">
+            <div class="vsPortrait"><img id="vsP2Img" alt="" /></div>
+            <div class="vsName" id="vsP2Name">—</div>
+            <div class="vsTag" id="vsP2Tag">PLAYER 2</div>
+          </div>
+        </div>
+        <div class="roster" id="roster"></div>
+        <div class="selBtns"><button id="charBack">◀ BACK</button><button id="charNext" class="primary">NEXT: ARENA ▶</button></div>
+      </div>
+    </div>
+
+    <!-- Arena select -->
+    <div id="arenaSelect" class="overlay">
+      <div class="selInner">
+        <div class="selTitle">SELECT ARENA</div>
+        <div class="arenaGrid" id="arenaGrid"></div>
+        <div class="selBtns"><button id="arenaBack">◀ BACK</button><button id="arenaFight" class="primary">FIGHT!</button></div>
+      </div>
+    </div>
+
+    <!-- Online invite panel -->
+    <div id="netPanel">
+      <b>ROOM OPEN</b>
+      <p>Share this code or link. Your friend picks <b>Join</b> or opens the link.</p>
+      <div class="code">Room: <span id="roomCode">…</span></div>
+      <div class="linkRow"><input id="inviteLink" readonly /><button id="copyInvite">Copy</button></div>
+      <p class="dim">Casual P2P — each player picks their own fighter; you host as Player 1.</p>
+    </div>
+
+    <!-- In-fight HUD -->
+    <div id="hud">
+      <div class="side left">
+        <div class="nameRow"><span id="p1name">REEVES JUNYA</span><span id="p1pips" class="pips">○○</span></div>
+        <div class="bar"><div id="p1Health" class="fill p1"></div></div>
+      </div>
+      <div id="roundText">CRASH OUT</div>
+      <div class="side right">
+        <div class="nameRow"><span id="p2pips" class="pips">○○</span><span id="p2name">MOLOCH</span></div>
+        <div class="bar"><div id="p2Health" class="fill p2"></div></div>
+      </div>
+    </div>
+
+    <div id="fps">— FPS</div>
+
+    <div id="banner"></div>
+    <button id="replayBtn">REMATCH</button>
+
+    <div id="topRight">
+      <button id="muteBtn" title="Mute music/SFX">🔊</button>
+      <button id="menuBtn" title="Back to menu">☰</button>
+    </div>
+
+    <div id="help">
+      <b>Reeves Junya:</b> ◀▶ move · ▲ jump · ▼ block · A/W punch · S/E kick · D hook &nbsp;|&nbsp; <b>`</b> Lab / Tuning
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
