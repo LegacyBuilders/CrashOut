@@ -73,11 +73,13 @@
 
     <!-- Online invite panel -->
     <div id="netPanel">
-      <b>ROOM OPEN</b>
-      <p>Share this code or link. Your friend picks <b>Join</b> or opens the link.</p>
-      <div class="code">Room: <span id="roomCode">…</span></div>
+      <b>ROOM OPEN — SEND THE INVITE</b>
+      <p>Send this link (or code) to your friend, then choose your fighter.</p>
       <div class="linkRow"><input id="inviteLink" readonly /><button id="copyInvite">Copy</button></div>
-      <p class="dim">Casual P2P — each player picks their own fighter; you host as Player 1.</p>
+      <div class="code">Room code: <span id="roomCode">…</span></div>
+      <div id="netStatus" class="dim">Waiting for opponent to join…</div>
+      <button id="netPickFighter" class="netbtn">CHOOSE YOUR FIGHTER ▶</button>
+      <button id="netCancel" class="netbtn ghost">Cancel</button>
     </div>
 
     <!-- In-fight HUD -->

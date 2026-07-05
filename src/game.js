@@ -177,7 +177,7 @@ export class FightingGame {
     const on = (id, ev, fn) => document.getElementById(id)?.addEventListener(ev, fn);
     on('btnCpu', 'click', () => this.showCharSelect('cpu'));
     on('btnLocal', 'click', () => this.showCharSelect('local'));
-    on('btnHost', 'click', () => this.showCharSelect('host'));
+    on('btnHost', 'click', () => this.startHost());
     on('btnJoin', 'click', () => {
       const id = document.getElementById('joinId')?.value?.trim();
       if (id) this.showCharSelect('guest', id);
@@ -319,7 +319,7 @@ export class FightingGame {
   }
 
   onArenaConfirm() {
-    if (this.pendingMode === 'host') { this.startHost(); return; }
+    if (this.pendingMode === 'host') { this.hostConfirm(); return; }
     this.confirmMatch();
   }
 
@@ -353,29 +353,48 @@ export class FightingGame {
     b.style.display = text ? 'flex' : 'none';
   }
 
-  // Host: picked own fighter + arena, now open the room and wait for the guest's pick.
+  // Host: open the room FIRST so the invite can be sent, then pick a fighter/arena.
   async startHost() {
     this.mode = 'host';
     this.audio.start();
     this.hideOverlays();
-    this.hostChar = this.selectedP1;
+    const menu = document.getElementById('menu'); if (menu) menu.style.display = 'none';
+    this.hostReady = false; this.hostChar = null; this.guestChar = null; this._matchStarting = false;
     this.net = new NetSession();
     this.net.onData = (msg) => this.onHostData(msg);
-    this.net.onOpen = () => this.setBanner('OPPONENT CONNECTED — PICKING…', 'good');
-    this.net.onClose = () => this.setBanner('OPPONENT LEFT', 'bad');
+    this.net.onOpen = () => { this._guestJoined = true; this.setNetStatus('✅ Opponent joined — pick your fighter to start'); };
+    this.net.onClose = () => this.setNetStatus('Opponent left.');
+    this.setNetStatus('Opening room…');
     try {
       const id = await this.net.host();
       const link = `${location.origin}${location.pathname}?join=${id}`;
       this.showInvite(id, link);
     } catch (e) {
-      this.setBanner('Could not open room. Check connection.', 'bad');
+      this.setNetStatus('Could not open room. Check your connection.');
     }
   }
+
+  setNetStatus(text) { const el = document.getElementById('netStatus'); if (el) el.textContent = text; }
 
   onHostData(msg) {
     if (!msg) return;
     if (msg.t === 'in') this.remoteInput.apply(msg);
-    else if (msg.t === 'sel' && !this._matchStarting) { this._matchStarting = true; this.guestChar = msg.char; this.beginNetMatch(); }
+    else if (msg.t === 'sel') { this.guestChar = msg.char; this.setNetStatus('✅ Opponent joined — pick your fighter to start'); this.tryBeginNetMatch(); }
+  }
+
+  // Host finished picking a fighter + arena.
+  hostConfirm() {
+    this.hostChar = this.selectedP1;
+    this.hostReady = true;
+    this.hideOverlays();
+    const panel = document.getElementById('netPanel'); if (panel) panel.style.display = 'block';
+    this.setNetStatus(this.guestChar ? 'Starting…' : 'Ready — waiting for your opponent to join & pick…');
+    this.tryBeginNetMatch();
+  }
+
+  tryBeginNetMatch() {
+    if (this._matchStarting) return;
+    if (this.hostReady && this.guestChar && this.net?.connected) { this._matchStarting = true; this.beginNetMatch(); }
   }
 
   // Guest: picked own fighter, now connect and send the pick to the host.
@@ -404,7 +423,10 @@ export class FightingGame {
     if (panel) panel.style.display = 'block';
     const code = document.getElementById('roomCode'); if (code) code.textContent = id;
     const l = document.getElementById('inviteLink'); if (l) l.value = link;
-    this.setBanner('WAITING FOR OPPONENT…');
+    if (!this._guestJoined) this.setNetStatus('Waiting for opponent to join…');
+    const pick = document.getElementById('netPickFighter'); if (pick) pick.onclick = () => this.showCharSelect('host');
+    const cancel = document.getElementById('netCancel'); if (cancel) cancel.onclick = () => this.backToMenu();
+    this.setBanner('');
   }
 
   async beginNetMatch() {
@@ -443,6 +465,7 @@ export class FightingGame {
   backToMenu() {
     this.net?.close(); this.net = null;
     this._matchStarting = false; this._guestStarted = false; this._latest = null;
+    this.hostReady = false; this.hostChar = null; this.guestChar = null; this._guestJoined = false;
     this.fightStarted = false; this.mode = 'menu';
     this.roundOver = this.matchOver = false;
     this.placeFightersAtStart();

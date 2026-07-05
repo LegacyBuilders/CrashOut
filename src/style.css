@@ -141,6 +141,12 @@ canvas { display: block; }
 .linkRow input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #10111c; color: #fff; font: 600 12px monospace; min-width: 0; }
 .linkRow button { padding: 0 16px; border-radius: 8px; border: 2px solid var(--cyan); background: rgba(55,224,255,.12); color: #fff; font-weight: 900; cursor: pointer; }
 .dim { color: #6b74a0; }
+#netStatus { margin: 12px 0 4px; font: 700 13px Arial; color: var(--cyan); }
+.netbtn { display: block; width: 100%; margin-top: 10px; padding: 13px; border-radius: 10px; cursor: pointer;
+  border: 2px solid var(--pink); background: linear-gradient(180deg, rgba(255,47,107,.4), rgba(255,47,107,.14));
+  color: #fff; font: 900 15px "Arial Black"; letter-spacing: 1px; transition: filter .15s; }
+.netbtn:hover { filter: brightness(1.14); }
+.netbtn.ghost { border-color: rgba(255,255,255,.3); background: rgba(255,255,255,.06); font-size: 13px; }
 
 /* ---------------- HUD ---------------- */
 #hud {
