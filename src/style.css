@@ -11,6 +11,7 @@ html, body {
   background: var(--ink); color: #fff;
   font-family: "Arial Black", system-ui, Arial, sans-serif;
   user-select: none;
+  touch-action: manipulation; /* no double-tap zoom (pinch blocked in noZoom.js) */
 }
 canvas { display: block; }
 

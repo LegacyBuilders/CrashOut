@@ -1,9 +1,11 @@
 import './style.css';
 import { FightingGame } from './game.js';
 import { registerSW, initPWA } from './ui/pwa.js';
+import { blockZoom } from './ui/noZoom.js';
 
 registerSW();
 initPWA();
+blockZoom();
 
 const game = new FightingGame(document.body);
 window.__game = game; // handy for debugging / Animation Lab
