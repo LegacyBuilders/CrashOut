@@ -17,14 +17,17 @@ canvas { display: block; }
 /* ---------------- Menu ---------------- */
 #menu {
   position: fixed; inset: 0; z-index: 100;
-  display: grid; place-items: center;
+  /* 'safe center' keeps content reachable: it falls back to top-aligned + scroll
+     instead of clipping when the menu is taller than a short landscape phone. */
+  display: flex; align-items: safe center; justify-content: center;
+  overflow-y: auto; padding: 12px;
   background:
     radial-gradient(1200px 600px at 50% -10%, rgba(122,75,255,.25), transparent),
     radial-gradient(900px 500px at 50% 110%, rgba(255,47,107,.25), transparent),
     rgba(3,4,10,.86);
   backdrop-filter: blur(3px);
 }
-.menuInner { text-align: center; width: min(92vw, 560px); padding: 24px; }
+.menuInner { text-align: center; width: min(92vw, 560px); padding: 24px; margin: auto; }
 .topline { font: 900 clamp(16px,3.4vw,30px) "Arial Black"; letter-spacing: 4px; color: var(--green); text-shadow: 0 0 16px rgba(126,201,107,.6); margin-bottom: 2px; }
 .logo {
   font-size: clamp(56px, 12vw, 128px); line-height: .86; font-weight: 900; letter-spacing: -2px;
@@ -46,9 +49,14 @@ canvas { display: block; }
 .mode.primary { border-color: var(--pink); background: linear-gradient(180deg, rgba(255,47,107,.35), rgba(255,47,107,.12)); box-shadow: 0 0 26px rgba(255,47,107,.35); }
 .diffRow { margin: -4px 0 2px; font-size: 13px; color: #aeb8e0; }
 .diffRow select { font: 700 13px Arial; margin-left: 8px; padding: 6px 10px; border-radius: 8px; background: #12131f; color: #fff; border: 1px solid #333; }
-.joinRow { display: flex; gap: 8px; }
+.joinRow { display: flex; gap: 6px; align-items: stretch; }
+.joinPrefix {
+  display: flex; align-items: center; padding: 0 8px; border-radius: 10px;
+  background: rgba(55,224,255,.10); border: 1px solid #333; color: #9fe9ff;
+  font: 700 13px monospace; letter-spacing: .5px; white-space: nowrap;
+}
 .joinRow input {
-  flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #10111c; color: #fff; font: 700 14px Arial; min-width: 0;
+  flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #10111c; color: #fff; font: 700 14px monospace; letter-spacing: 1px; min-width: 0;
 }
 .joinRow button {
   padding: 0 18px; border-radius: 10px; border: 2px solid var(--cyan); background: rgba(55,224,255,.12); color: #fff; font-weight: 900; cursor: pointer;
@@ -59,7 +67,7 @@ canvas { display: block; }
 
 /* ---------------- Character / Arena select ---------------- */
 .overlay {
-  display: none; position: fixed; inset: 0; z-index: 95; place-items: center;
+  display: none; position: fixed; inset: 0; z-index: 95; place-items: safe center; overflow-y: auto;
   background:
     radial-gradient(1200px 600px at 50% -10%, rgba(122,75,255,.28), transparent),
     radial-gradient(900px 500px at 50% 110%, rgba(255,47,107,.26), transparent),
@@ -67,7 +75,7 @@ canvas { display: block; }
   backdrop-filter: blur(4px);
 }
 .overlay.show { display: grid; }
-.selInner { width: min(96vw, 1000px); max-height: 94vh; overflow-y: auto; text-align: center; padding: 18px; }
+.selInner { width: min(96vw, 1000px); max-height: 94vh; max-height: 94dvh; overflow-y: auto; text-align: center; padding: 18px; margin: auto; }
 .selTitle { font: 900 clamp(24px,4.6vw,46px) "Arial Black"; letter-spacing: 3px; color: #fff; text-shadow: 0 0 22px var(--pink); margin-bottom: 16px; }
 
 /* VS header */
@@ -130,13 +138,21 @@ canvas { display: block; }
 /* ---------------- Net panel ---------------- */
 #netPanel {
   display: none; position: fixed; z-index: 90; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: min(90vw, 460px); padding: 22px; border-radius: 14px;
+  width: min(90vw, 460px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto;
+  padding: 22px; border-radius: 14px;
   background: rgba(8,9,18,.95); border: 2px solid var(--purple); box-shadow: 0 0 40px rgba(122,75,255,.4);
   text-align: center;
 }
 #netPanel b { color: var(--cyan); letter-spacing: 2px; font-size: 20px; }
 #netPanel p { font: 500 13px/1.6 Arial; color: #aeb8e0; }
-#netPanel .code { font: 900 22px monospace; margin: 10px 0; color: var(--green); }
+#netPanel .code { font: 900 18px monospace; margin: 10px 0; color: var(--green); }
+.copyCodeBtn { padding: 4px 10px; border-radius: 8px; cursor: pointer; vertical-align: middle;
+  border: 1px solid var(--cyan); background: rgba(55,224,255,.12); color: #fff; font: 800 12px Arial; }
+.copyCodeBtn:hover { filter: brightness(1.14); }
+.shareRow { display: flex; gap: 8px; margin: 12px 0; }
+.shareBtn { flex: 1; padding: 11px 4px; border-radius: 10px; cursor: pointer;
+  border: 2px solid var(--cyan); background: rgba(55,224,255,.12); color: #fff; font: 900 13px "Arial Black"; letter-spacing: .5px; }
+.shareBtn:hover { filter: brightness(1.14); }
 .linkRow { display: flex; gap: 8px; }
 .linkRow input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #10111c; color: #fff; font: 600 12px monospace; min-width: 0; }
 .linkRow button { padding: 0 16px; border-radius: 8px; border: 2px solid var(--cyan); background: rgba(55,224,255,.12); color: #fff; font-weight: 900; cursor: pointer; }
@@ -196,6 +212,8 @@ canvas { display: block; }
   background: rgba(0,0,0,.5); color: #fff; font-size: 18px; cursor: pointer;
 }
 #topRight button:hover { background: rgba(255,255,255,.15); }
+#fsBtn { display: none; }
+body.touch #fsBtn { display: flex; align-items: center; justify-content: center; }
 #help {
   display: none; position: fixed; bottom: 12px; left: 12px; z-index: 20;
   padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,.55);
@@ -274,6 +292,13 @@ body.mobile #help, body.mobile #fps { display: none !important; }
 .iosIcon { width: 84px; height: 84px; border-radius: 20px; margin-bottom: 12px; }
 .iosTitle { font: 900 20px "Arial Black"; letter-spacing: 2px; color: #fff; }
 .iosCard p { font: 500 13px Arial; color: #aeb8e0; }
+.iosProfileBtn { display: block; width: 100%; margin: 12px auto 6px; padding: 13px 18px; border-radius: 999px; cursor: pointer;
+  border: 2px solid var(--cyan); background: linear-gradient(180deg, rgba(55,224,255,.32), rgba(55,224,255,.10));
+  color: #fff; font: 900 16px "Arial Black"; letter-spacing: 1px; box-shadow: 0 0 22px rgba(55,224,255,.35); }
+.iosProfileBtn:hover { filter: brightness(1.12); }
+.iosProfileBtn:disabled { opacity: .6; cursor: default; }
+.iosProfileNote { font: 500 11px/1.5 Arial; color: #8b95bf; margin-bottom: 6px; }
+.iosOr { font: 700 11px Arial; letter-spacing: 2px; color: #6b74a0; text-transform: uppercase; margin: 12px 0 4px; }
 .iosCard ol { text-align: left; font: 500 14px/1.7 Arial; color: #cdd6ff; margin: 12px 0; padding-left: 22px; }
 .iosCard b { color: #fff; }
 .ios-share { color: var(--cyan); font-weight: 900; }
@@ -286,4 +311,10 @@ body.mobile #help, body.mobile #fps { display: none !important; }
   .tc-joyzone { left: env(safe-area-inset-left); }
   #topRight { right: calc(20px + env(safe-area-inset-right)); top: calc(16px + env(safe-area-inset-top)); }
   #hud { left: calc(20px + env(safe-area-inset-left)); right: calc(20px + env(safe-area-inset-right)); }
+  /* Keep menus/overlays clear of the notch + home indicator so nothing is unreachable. */
+  #menu { padding:
+    calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+    calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
+  .selInner { padding-left: calc(18px + env(safe-area-inset-left)); padding-right: calc(18px + env(safe-area-inset-right)); }
+  #netPanel { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
 }

@@ -8,13 +8,18 @@ export class KeyboardInput {
       'KeyI','KeyJ','KeyK','KeyL','KeyU','KeyO','KeyP'    // P2 local
     ];
 
+    // Ignore keystrokes aimed at a text field (e.g. the join-code box), otherwise
+    // preventDefault() below would swallow letters like w/a/s/d/e while typing.
+    const inField = (e) => e.target && e.target.closest?.('input, textarea, select, [contenteditable]');
+
     window.addEventListener('keydown', (e) => {
+      if (inField(e)) return;
       const code = e.code;
       if (!this.down.has(code)) this.pressed.add(code);
       this.down.add(code);
       if (this.controlCodes.includes(code)) e.preventDefault();
     });
-    window.addEventListener('keyup', (e) => this.down.delete(e.code));
+    window.addEventListener('keyup', (e) => { if (inField(e)) return; this.down.delete(e.code); });
   }
 
   matches(codeOrCodes, set) {

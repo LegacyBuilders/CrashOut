@@ -87,7 +87,12 @@ export class FightingGame {
     // than restarts, so the track plays continuously across menu → mode/char/arena → fights.
     if (this.isTouch) this.touch = new TouchControls();
     this.audio.start();
-    const firstGesture = () => { this.audio.start(); if (this.isMobile) this.goFullscreen(); };
+    const firstGesture = (e) => {
+      this.audio.start();
+      // Don't grab fullscreen when the gesture is someone typing in a text field (join code).
+      const typing = e?.target && e.target.closest?.('input, textarea, select, [contenteditable]');
+      if (this.isMobile && !typing) this.goFullscreen();
+    };
     window.addEventListener('pointerdown', firstGesture);
     window.addEventListener('keydown', firstGesture);
     this.setBanner('LOADING FIGHTERS…');
@@ -185,8 +190,10 @@ export class FightingGame {
     on('btnLocal', 'click', () => this.showCharSelect('local'));
     on('btnHost', 'click', () => this.startHost());
     on('btnJoin', 'click', () => {
-      const id = document.getElementById('joinId')?.value?.trim();
-      if (id) this.showCharSelect('guest', id);
+      // The 'crashout-' prefix is pre-typed in the UI; accept a bare code or a pasted full id.
+      const raw = (document.getElementById('joinId')?.value || '').trim().toLowerCase();
+      const code = raw.replace(/^crashout-/, '');
+      if (code) this.showCharSelect('guest', 'crashout-' + code);
     });
     on('charBack', 'click', () => this.showMenu(true));
     on('charNext', 'click', () => this.onCharNext());
@@ -199,22 +206,35 @@ export class FightingGame {
       const b = document.getElementById('muteBtn'); if (b) b.textContent = m ? '🔇' : '🔊';
     });
     on('menuBtn', 'click', () => this.backToMenu());
-    on('copyInvite', 'click', () => {
-      const link = document.getElementById('inviteLink');
-      if (link) { navigator.clipboard?.writeText(link.value); }
+    on('fsBtn', 'click', () => this.goFullscreen(true));
+    on('reselectBtn', 'click', () => this.hostReselect());
+
+    // Invite sharing.
+    on('copyInvite', 'click', (e) => this.copyText(this._inviteLink || '', e.currentTarget, 'Copied!', 'Copy link'));
+    on('copyCode', 'click', (e) => this.copyText(this._inviteCode || '', e.currentTarget, 'Copied!', 'Copy code'));
+    on('shareInvite', 'click', () => {
+      if (navigator.share) navigator.share({ title: 'CRASH OUT', text: this.inviteMessage(), url: this._inviteLink }).catch(() => {});
+      else this.copyText(this._inviteLink || '', document.getElementById('shareInvite'), 'Link copied!', '📤 Share');
+    });
+    on('smsInvite', 'click', () => {
+      const sep = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
+      location.href = `sms:${sep}body=${encodeURIComponent(this.inviteMessage())}`;
+    });
+    on('emailInvite', 'click', () => {
+      location.href = `mailto:?subject=${encodeURIComponent('CRASH OUT invite')}&body=${encodeURIComponent(this.inviteMessage())}`;
     });
 
-    // Auto-join if opened with ?join=<id>
+    // Auto-join if opened with ?join=<id> — strip the prefix so only the code shows.
     const params = new URLSearchParams(location.search);
     const join = params.get('join');
     if (join) {
-      const jf = document.getElementById('joinId'); if (jf) jf.value = join;
+      const jf = document.getElementById('joinId'); if (jf) jf.value = join.replace(/^crashout-/, '');
     }
   }
 
   showMenu(show) {
     this.hideOverlays();
-    if (show) this.touch?.hide();
+    if (show) { this.touch?.hide(); this.showReselectBtn(false); }
     const m = document.getElementById('menu');
     if (m) m.style.display = show ? 'grid' : 'none';
     const help = document.getElementById('help');
@@ -227,14 +247,29 @@ export class FightingGame {
     const np = document.getElementById('netPanel'); if (np) np.style.display = 'none';
   }
 
-  // Go landscape fullscreen on mobile (needs a user gesture; iOS Safari may reject).
-  goFullscreen() {
-    if (this._fsTried) return; this._fsTried = true;
+  // Go landscape fullscreen (needs a user gesture). The auto first-gesture call runs
+  // once; the manual button passes force=true so it always works on demand.
+  // iOS iPhone has no Fullscreen API — there we route to the install overlay instead
+  // (installing the PWA is the only way to lose the Safari chrome).
+  goFullscreen(force = false) {
     const el = document.documentElement;
+    const canFs = !!(el.requestFullscreen || el.webkitRequestFullscreen);
+    if (!canFs) {
+      if (force) this.showIosInstall();
+      return;
+    }
+    if (!force && this._fsTried) return;
+    this._fsTried = true;
     try {
-      const req = el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
+      const req = document.fullscreenElement ? null : (el.requestFullscreen?.() || el.webkitRequestFullscreen?.());
       Promise.resolve(req).then(() => { try { screen.orientation?.lock?.('landscape'); } catch (_) {} }).catch(() => {});
     } catch (_) {}
+  }
+
+  // Surface the iOS Add-to-Home-Screen / Web Clip overlay (defined in pwa.js markup).
+  showIosInstall() {
+    const overlay = document.getElementById('iosInstall');
+    if (overlay) overlay.classList.add('show');
   }
 
   // ---------------- character / arena select ----------------
@@ -250,7 +285,7 @@ export class FightingGame {
     const vsP2 = document.getElementById('vsP2'); if (vsP2) vsP2.style.display = twoPlayer ? '' : 'none';
     const vsBadge = document.getElementById('vsBadge'); if (vsBadge) vsBadge.style.display = twoPlayer ? '' : 'none';
     const p1tag = document.getElementById('vsP1Tag'); if (p1tag) p1tag.textContent = twoPlayer ? (mode === 'local' ? 'PLAYER 1' : 'YOUR FIGHTER') : 'YOUR FIGHTER';
-    const next = document.getElementById('charNext'); if (next) next.textContent = (mode === 'guest') ? 'CONNECT ▶' : 'NEXT: ARENA ▶';
+    const next = document.getElementById('charNext'); if (next) next.textContent = (mode === 'guest') ? (this.net?.connected ? 'READY ▶' : 'CONNECT ▶') : 'NEXT: ARENA ▶';
     this.activeSlot = 'p1';
     ['p1', 'p2'].forEach((slot) => { const f = document.getElementById(slot === 'p1' ? 'vsP1' : 'vsP2'); if (f) f.onclick = () => { this.activeSlot = slot; this.updateVsFrames(); this.audio.uiBlip?.(); }; });
     this.renderRoster();
@@ -305,8 +340,20 @@ export class FightingGame {
 
   onCharNext() {
     this.audio.uiSelect?.();
-    if (this.pendingMode === 'guest') { this.startGuest(this.pendingJoinId); return; }
+    if (this.pendingMode === 'guest') {
+      // Mid-match re-pick reuses the live connection; a fresh join connects first.
+      if (this.net?.connected) { this.guestChar = this.selectedP1; this.guestSendPick(); }
+      else this.startGuest(this.pendingJoinId);
+      return;
+    }
     this.showArenaSelect();
+  }
+
+  // Guest sends its chosen fighter to the host over the existing connection and waits.
+  guestSendPick() {
+    this.hideOverlays();
+    this.net.send({ t: 'sel', char: this.guestChar });
+    this.setBanner('WAITING FOR HOST…', 'good');
   }
 
   showArenaSelect() {
@@ -438,12 +485,44 @@ export class FightingGame {
     const menu = document.getElementById('menu'); if (menu) menu.style.display = 'none';
     const panel = document.getElementById('netPanel');
     if (panel) panel.style.display = 'block';
-    const code = document.getElementById('roomCode'); if (code) code.textContent = id;
+    this._inviteLink = link;
+    this._inviteCode = id.replace(/^crashout-/, ''); // bare code the friend types into the prefixed box
+    const code = document.getElementById('roomCode'); if (code) code.textContent = this._inviteCode;
     const l = document.getElementById('inviteLink'); if (l) l.value = link;
     if (!this._guestJoined) this.setNetStatus('Waiting for opponent to join…');
     const pick = document.getElementById('netPickFighter'); if (pick) pick.onclick = () => this.showCharSelect('host');
     const cancel = document.getElementById('netCancel'); if (cancel) cancel.onclick = () => this.backToMenu();
     this.setBanner('');
+  }
+
+  inviteMessage() {
+    return `Fight me in CRASH OUT 🥊 Join my room: ${this._inviteLink || ''}`;
+  }
+
+  // Copy text to the clipboard with an execCommand fallback (non-HTTPS / old mobile),
+  // flashing a confirmation label on the button.
+  copyText(text, btn, doneLabel, restoreLabel) {
+    if (!text) return;
+    const done = () => {
+      if (!btn) return;
+      const orig = restoreLabel || btn.textContent;
+      btn.textContent = doneLabel;
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => this._legacyCopy(text, done));
+    } else {
+      this._legacyCopy(text, done);
+    }
+  }
+
+  _legacyCopy(text, done) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      document.execCommand('copy'); ta.remove(); done?.();
+    } catch (_) {}
   }
 
   async beginNetMatch() {
@@ -456,19 +535,51 @@ export class FightingGame {
     this.p2.bindings = ACTION_BINDINGS; this.p2.isAI = false;
     this.setNames(CHARACTERS[this.hostChar].name + ' (HOST)', CHARACTERS[this.guestChar].name + ' (P2)');
     this.net.send({ t: 'setup', arena: this.selectedArena, p1char: this.hostChar, p2char: this.guestChar });
+    this._reselecting = false;
+    this.showReselectBtn(true); // host can bounce back to select mid-match
     this.startRound(true);
+  }
+
+  showReselectBtn(on) {
+    const rb = document.getElementById('reselectBtn');
+    if (rb) rb.style.display = on ? 'block' : 'none';
+  }
+
+  // Host: bounce back to fighter/arena select mid-match, keeping the connection alive.
+  // Both players re-pick — the guest is told to re-open its own select.
+  hostReselect() {
+    if (this.mode !== 'host' || !this.net?.connected) return;
+    this._reselecting = true;
+    this.fightStarted = false;            // pause sim + snapshot streaming while choosing
+    this.net.send({ t: 'reselect' });
+    this._matchStarting = false; this._guestStarted = false;
+    this.hostReady = false; this.hostChar = null; this.guestChar = null;
+    this.touch?.hide();
+    this.showReselectBtn(false);
+    this.showCharSelect('host');
   }
 
   async onGuestData(msg) {
     if (!msg) return;
     if (msg.t === 'setup') {
       if (this._matchStarting) return; this._matchStarting = true;
+      this._reselecting = false;
       this.setBanner('LOADING FIGHTERS…');
+      if (msg.arena) this.selectedArena = msg.arena; // keep guest's arena in sync with host
       await this.buildMatch(msg.p1char, msg.p2char); // host is P1, guest is P2
       this.setBanner('');
       const help = document.getElementById('help'); if (help) help.style.display = 'block';
       this.setNames(CHARACTERS[msg.p1char].name, CHARACTERS[msg.p2char].name + ' (YOU)');
+      this.touch?.show(); // guest never runs startRound() — show touch controls here so joiners can fight
+    } else if (msg.t === 'reselect') {
+      // Host went back to select — reset and re-open our own fighter select (both re-pick).
+      this._reselecting = true;
+      this._matchStarting = false; this._guestStarted = false; this._latest = null;
+      this.touch?.hide();
+      this.setBanner('OPPONENT IS CHOOSING…', 'good');
+      this.showCharSelect('guest');
     } else if (msg.t === 'st') {
+      if (this._reselecting) return; // ignore stale simulation while re-selecting
       if (!this._guestStarted) { this._guestStarted = true; this.fightStarted = true; }
       this._latest = msg;
     }
@@ -481,8 +592,9 @@ export class FightingGame {
 
   backToMenu() {
     this.net?.close(); this.net = null;
-    this._matchStarting = false; this._guestStarted = false; this._latest = null;
+    this._matchStarting = false; this._guestStarted = false; this._latest = null; this._reselecting = false;
     this.hostReady = false; this.hostChar = null; this.guestChar = null; this._guestJoined = false;
+    this.showReselectBtn(false);
     this.fightStarted = false; this.mode = 'menu';
     this.roundOver = this.matchOver = false;
     this.placeFightersAtStart();

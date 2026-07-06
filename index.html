@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content" />
     <title>CRASH OUT — by Alienz Only</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#05060c" />
@@ -35,7 +35,8 @@
           <button id="btnLocal" class="mode">LOCAL 2-PLAYER</button>
           <button id="btnHost" class="mode">INVITE A FRIEND (ONLINE)</button>
           <div class="joinRow">
-            <input id="joinId" type="text" placeholder="paste room code to join" />
+            <span class="joinPrefix">crashout-</span>
+            <input id="joinId" type="text" inputmode="latin" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="code" />
             <button id="btnJoin">JOIN</button>
           </div>
         </div>
@@ -55,6 +56,9 @@
         <img src="/assets/icons/apple-touch-icon.png" alt="" class="iosIcon" />
         <div class="iosTitle">INSTALL CRASH OUT</div>
         <p>Play fullscreen with a home-screen icon — no browser bar.</p>
+        <button id="iosProfileBtn" class="iosProfileBtn" type="button">➕ Add to iPhone</button>
+        <div class="iosProfileNote">Adds a home-screen icon via a config profile. iOS will ask you to open <b>Settings ▸ Profile Downloaded ▸ Install</b> and enter your passcode.</div>
+        <div class="iosOr">or add it manually</div>
         <ol>
           <li>Tap the <b>Share</b> button <span class="ios-share">􀈂</span> at the bottom of Safari.</li>
           <li>Scroll and tap <b>“Add to Home Screen”</b>.</li>
@@ -98,9 +102,14 @@
     <!-- Online invite panel -->
     <div id="netPanel">
       <b>ROOM OPEN — SEND THE INVITE</b>
-      <p>Send this link (or code) to your friend, then choose your fighter.</p>
-      <div class="linkRow"><input id="inviteLink" readonly /><button id="copyInvite">Copy</button></div>
-      <div class="code">Room code: <span id="roomCode">…</span></div>
+      <p>Share the link with a friend, then choose your fighter.</p>
+      <div class="shareRow">
+        <button id="shareInvite" class="shareBtn" type="button">📤 Share</button>
+        <button id="smsInvite" class="shareBtn" type="button">💬 Text</button>
+        <button id="emailInvite" class="shareBtn" type="button">✉️ Email</button>
+      </div>
+      <div class="linkRow"><input id="inviteLink" readonly /><button id="copyInvite" type="button">Copy link</button></div>
+      <div class="code">Code: <span id="roomCode">…</span> <button id="copyCode" class="copyCodeBtn" type="button">Copy code</button></div>
       <div id="netStatus" class="dim">Waiting for opponent to join…</div>
       <button id="netPickFighter" class="netbtn">CHOOSE YOUR FIGHTER ▶</button>
       <button id="netCancel" class="netbtn ghost">Cancel</button>
@@ -125,6 +134,8 @@
     <button id="replayBtn">REMATCH</button>
 
     <div id="topRight">
+      <button id="reselectBtn" title="Change fighters / arena" style="display:none">⇄</button>
+      <button id="fsBtn" title="Fullscreen">⛶</button>
       <button id="muteBtn" title="Mute music/SFX">🔊</button>
       <button id="menuBtn" title="Back to menu">☰</button>
     </div>
