@@ -1,5 +1,9 @@
 import './style.css';
 import { FightingGame } from './game.js';
+import { registerSW, initPWA } from './ui/pwa.js';
+
+registerSW();
+initPWA();
 
 const game = new FightingGame(document.body);
 window.__game = game; // handy for debugging / Animation Lab

@@ -2,8 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <title>CRASH OUT — by Alienz Only</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#05060c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CRASH OUT" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/assets/icons/icon-192.png" />
   </head>
   <body>
     <!-- Title / mode menu -->
@@ -37,6 +45,22 @@
           <b>P2 (local):</b> J/L move · I jump · K block · U punch · O kick · P heavy<br/>
           <span class="dim">Press <b>`</b> (tilde) for the Animation Lab + Tuning panel.</span>
         </div>
+        <button id="installBtn" class="installBtn" type="button">📱 INSTALL APP</button>
+      </div>
+    </div>
+
+    <!-- iOS Add-to-Home-Screen instructions -->
+    <div id="iosInstall">
+      <div class="iosCard">
+        <img src="/assets/icons/apple-touch-icon.png" alt="" class="iosIcon" />
+        <div class="iosTitle">INSTALL CRASH OUT</div>
+        <p>Play fullscreen with a home-screen icon — no browser bar.</p>
+        <ol>
+          <li>Tap the <b>Share</b> button <span class="ios-share">􀈂</span> at the bottom of Safari.</li>
+          <li>Scroll and tap <b>“Add to Home Screen”</b>.</li>
+          <li>Tap <b>Add</b>, then open <b>CRASH OUT</b> from your home screen.</li>
+        </ol>
+        <button id="iosClose" type="button">GOT IT</button>
       </div>
     </div>
 
